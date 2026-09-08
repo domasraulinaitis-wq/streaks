@@ -1,110 +1,55 @@
-const KEY="streaks-v1";
-const EMOJIS=["🍱","🏋️","🧗","📚","♟️","🎸","💰","🧘","💻","🧹","🥗","🚶","💧","😴","🎯"];
-const MILESTONES=[3,7,14,30,60,100,365];
+/* Streaks V1.1 — local-first. Existing records are preserved and extended in place. */
+(() => {
+  'use strict';
+  const $ = s => document.querySelector(s), app = $('#app');
+  const today = () => new Date().toISOString().slice(0,10);
+  const iso = d => new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString().slice(0,10);
+  const dayName = d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d];
+  const CANDIDATES = ['streaks-v1','streaks','streaksData','streak-data','streaks-data','streakTracker','streak-tracker-data','habits','habitTrackerData'];
+  let storeKey = null, data = { streaks: [] }, rootArray = false, listKey = 'streaks', view = { page:'home', id:null, month:new Date() };
 
-let data=JSON.parse(localStorage.getItem(KEY)||"null")||{streaks:[]};
-const $=id=>document.getElementById(id);
-const iso=d=>{const x=new Date(d);return new Date(x.getTime()-x.getTimezoneOffset()*60000).toISOString().slice(0,10)};
-const today=iso(new Date());
-function save(){localStorage.setItem(KEY,JSON.stringify(data))}
-function parseDate(s){return new Date(s+"T12:00:00")}
-function diff(a,b){return Math.round((parseDate(b)-parseDate(a))/86400000)}
-function applicable(s,date){
-  const dow=parseDate(date).getDay();
-  if(s.frequency==="daily") return true;
-  if(s.frequency==="weekdays") return dow>=1&&dow<=5;
-  return (s.customDays||[]).includes(dow);
-}
-function done(s,date){return !!s.completed?.includes(date)}
-function currentStreak(s){
-  let d=today,n=0;
-  while(true){
-    if(!applicable(s,d)){d=iso(new Date(parseDate(d)-86400000));continue}
-    if(!done(s,d))break;
-    n++; d=iso(new Date(parseDate(d)-86400000));
+  function parse(v){ try { return JSON.parse(v); } catch { return null; } }
+  function getList(obj){ return Array.isArray(obj) ? obj : (obj && (obj.streaks || obj.habits || obj.items || obj.data)); }
+  function locate(){
+    for (const key of CANDIDATES) { const value=parse(localStorage.getItem(key)); if (Array.isArray(getList(value))) return [key,value]; }
+    for (let i=0;i<localStorage.length;i++) { const key=localStorage.key(i), value=parse(localStorage.getItem(key)); const list=getList(value); if(Array.isArray(list) && list.some(x=>x && typeof x==='object' && (x.name || x.completions || x.completedDates || x.history))) return [key,value]; }
+    return ['streaks-data',{streaks:[]}];
   }
-  return n;
-}
-function bestStreak(s){
-  const days=(s.completed||[]).sort();
-  let best=0,run=0,last=null;
-  for(const d of days){
-    if(!applicable(s,d)) continue;
-    if(last && diff(last,d)===1) run++; else run=1;
-    best=Math.max(best,run);last=d;
-  }
-  return best;
-}
-function total(s){return (s.completed||[]).length}
-function toggle(s,date=today){
-  s.completed=s.completed||[];
-  const i=s.completed.indexOf(date);
-  if(i>=0)s.completed.splice(i,1);else s.completed.push(date);
-  save();render();
-}
-function fmtDate(d){return parseDate(d).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"})}
-function render(){
-  $("todayLabel").textContent=fmtDate(today);
-  const applicableToday=data.streaks.filter(s=>applicable(s,today));
-  const completedToday=applicableToday.filter(s=>done(s,today)).length;
-  $("todayScore").textContent=`${completedToday}/${applicableToday.length} complete`;
-  $("todayList").innerHTML=applicableToday.length?applicableToday.map(s=>`
-    <div class="card today-row">
-      <div class="icon">${s.icon}</div><div class="grow"><div class="name">${esc(s.name)}</div><div class="meta">🔥 ${currentStreak(s)} day streak</div></div>
-      <button class="done ${done(s,today)?"checked":""}" data-toggle="${s.id}">${done(s,today)?"✓ Done":"Mark done"}</button>
-    </div>`).join(""):`<div class="empty"><strong>Nothing to track today</strong>Add your first streak with +</div>`;
-  $("streakList").innerHTML=data.streaks.length?data.streaks.map(s=>`
-    <div class="card streak-row" data-open="${s.id}">
-      <div class="icon">${s.icon}</div><div class="grow"><div class="name">${esc(s.name)}</div><div class="meta">${s.frequency==="weekdays"?"Weekdays":s.frequency==="daily"?"Every day":"Custom schedule"} · ${total(s)} completed</div></div>
-      <div style="text-align:right"><div class="big-number">${currentStreak(s)}</div><div class="meta">🔥 streak</div></div><div class="arrow">›</div>
-    </div>`).join(""):`<div class="empty"><strong>Build your first streak</strong>Track anything you want to do consistently.</div>`;
-  document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=e=>{e.stopPropagation();toggle(data.streaks.find(s=>s.id===b.dataset.toggle))});
-  document.querySelectorAll("[data-open]").forEach(c=>c.onclick=()=>openDetail(c.dataset.open));
-}
-function esc(x){return String(x).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
-
-function openAdd(){
-  $("modalContent").innerHTML=`<h2>Create a streak</h2>
-  <div class="field"><label>NAME</label><input id="newName" placeholder="e.g. Bring lunch to work"></div>
-  <div class="field"><label>ICON</label><div class="emoji-grid">${EMOJIS.map((e,i)=>`<button class="emoji ${i===0?"selected":""}" data-e="${e}">${e}</button>`).join("")}</div></div>
-  <div class="field"><label>HOW OFTEN?</label><select id="newFreq"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="custom">Custom days</option></select></div>
-  <div class="field hidden" id="customDays"><label>DAYS</label><div class="emoji-grid">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d,i)=>`<button class="emoji ${i>0&&i<6?"selected":""}" data-day="${i}">${d}</button>`).join("")}</div></div>
-  <div class="field"><label>REWARD IDEA (OPTIONAL)</label><input id="newReward" placeholder="e.g. Restaurant dinner at 30 days"></div>
-  <div class="field"><label>MONEY SAVED PER COMPLETION (OPTIONAL)</label><input id="newMoney" type="number" min="0" step=".50" placeholder="e.g. 8.50"></div>
-  <button class="primary" id="create">Create streak</button>`;
-  document.querySelectorAll("[data-e]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-e]").forEach(x=>x.classList.remove("selected"));b.classList.add("selected")});
-  $("newFreq").onchange=()=>$("customDays").classList.toggle("hidden",$("newFreq").value!=="custom");
-  document.querySelectorAll("[data-day]").forEach(b=>b.onclick=()=>b.classList.toggle("selected"));
-  $("create").onclick=()=>{
-    const name=$("newName").value.trim();if(!name)return $("newName").focus();
-    const freq=$("newFreq").value;
-    data.streaks.push({id:crypto.randomUUID(),name,icon:document.querySelector("[data-e].selected").dataset.e,frequency:freq,customDays:freq==="custom"?[...document.querySelectorAll("[data-day].selected")].map(x=>+x.dataset.day):[],completed:[],reward:$("newReward").value.trim(),money:+$("newMoney").value||0,created:today});
-    save();closeModal();render();
-  };
-  openModal();
-}
-function openDetail(id){
- const s=data.streaks.find(x=>x.id===id); if(!s)return;
- $("modalContent").innerHTML=`<button class="back" id="back">← All streaks</button><div style="display:flex;gap:13px;align-items:center"><div class="icon">${s.icon}</div><div><div class="eyebrow">STREAK</div><h2>${esc(s.name)}</h2></div></div>
- <div class="detail-stats"><div class="stat"><b>${currentStreak(s)}</b><span>Current</span></div><div class="stat"><b>${bestStreak(s)}</b><span>Best</span></div><div class="stat"><b>${total(s)}</b><span>Total</span></div></div>
- ${s.money?`<div class="card"><div class="eyebrow">ESTIMATED SAVINGS</div><div class="big-number">€${(total(s)*s.money).toFixed(2)}</div><div class="meta">Based on €${s.money.toFixed(2)} per completion</div></div>`:""}
- <div class="calendar">${calendar(s)}</div>
- <h2 style="margin-top:22px">Milestones</h2>
- <div>${MILESTONES.map(n=>`<div class="milestone"><span><span class="badge">${bestStreak(s)>=n?"🏆":"🔒"}</span> <b>${n} days</b></span><small>${bestStreak(s)>=n?"Unlocked":"Keep going"}</small></div>`).join("")}</div>
- ${s.reward?`<h2 style="margin-top:22px">Reward</h2><div class="reward"><b>${esc(s.reward)}</b><small>Use this as your reward when you hit a milestone.</small></div>`:""}
- <button class="secondary danger" id="delete">Delete streak</button>`;
- $("back").onclick=()=>{openModal();openAdd?render():null;}; // replaced below
- $("back").onclick=()=>{ $("modalContent").innerHTML=`<h2>All streaks</h2>`; closeModal(); render(); };
- $("delete").onclick=()=>{if(confirm("Delete this streak?")){data.streaks=data.streaks.filter(x=>x.id!==id);save();closeModal();render()}};
-}
-function calendar(s){
- const now=parseDate(today), first=new Date(now.getFullYear(),now.getMonth(),1), start=new Date(first);start.setDate(1-first.getDay());
- let html=`<div class="cal-head"><b>${now.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</b><span class="meta">Tap days to change</span></div><div class="cal-grid">${["S","M","T","W","T","F","S"].map(x=>`<div class="dow">${x}</div>`).join("")}`;
- for(let i=0;i<42;i++){let d=new Date(start);d.setDate(start.getDate()+i);let ds=iso(d);let cls="day";if(done(s,ds))cls+=" done";else if(d<now&&applicable(s,ds))cls+=" missed";if(d>now)cls+=" future";html+=`<button class="${cls}" data-cal="${ds}">${d.getDate()}</button>`}
- return html+"</div></div>";
-}
-function openModal(){$("modal").classList.remove("hidden")}
-function closeModal(){$("modal").classList.add("hidden")}
-$("addBtn").onclick=openAdd;$("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
-render();
-if("serviceWorker" in navigator)navigator.serviceWorker.register("service-worker.js").catch(()=>{});
+  function establishRoot(value){ rootArray=Array.isArray(value); data=rootArray?{streaks:value}:value; listKey=rootArray?null:(Array.isArray(data.streaks)?'streaks':Array.isArray(data.habits)?'habits':Array.isArray(data.items)?'items':Array.isArray(data.data)?'data':'streaks'); const list=getList(data); if(!Array.isArray(list)) data.streaks=[]; else data.streaks=list; }
+  function boot(){ [storeKey,data]=locate(); establishRoot(data); normalizeAll(); render(); }
+  function normalizeAll(){ data.streaks.forEach((s,i)=>{
+    s.id ??= s._id || s.uuid || `${Date.now()}-${i}`;
+    s.name ??= s.title || s.label || 'Untitled streak'; s.icon ??= s.emoji || '✨';
+    s.createdAt ??= s.startDate || s.created || (s.completions||s.completedDates||s.history||[])[0] || today();
+    s.frequency ??= s.schedule?.type || 'daily';
+    s.customDays ??= s.schedule?.days || s.days || [1,2,3,4,5,6,0];
+    if (!Array.isArray(s.customDays)) s.customDays=[1,2,3,4,5,6,0];
+    s.completions ??= s.completed || s.completedDates || s.history || s.dates || [];
+    if (!Array.isArray(s.completions)) s.completions=Object.keys(s.completions||{}).filter(k=>s.completions[k]);
+    s.completions=[...new Set(s.completions.map(x=>typeof x==='string'?x.slice(0,10):x).filter(x=>/^\d{4}-\d\d-\d\d$/.test(x)))];
+    s.reward ??= s.rewardText || ''; s.moneySaved ??= s.savingsPerCompletion ?? s.money ?? '';
+  }); }
+  function save(){ data.streaks.forEach(s=>{s.completed=s.completions}); if(!rootArray) data[listKey]=data.streaks; localStorage.setItem(storeKey,JSON.stringify(rootArray?data.streaks:data)); }
+  function streak(id){ return data.streaks.find(x=>String(x.id)===String(id)); }
+  function applicable(s,date){ const d=new Date(`${date}T12:00:00`); if(date < s.createdAt.slice(0,10)) return false; if(s.frequency==='daily') return true; if(s.frequency==='weekdays') return d.getDay()>0&&d.getDay()<6; return s.customDays.includes(d.getDay()); }
+  function calc(s){ const done=new Set(s.completions), start=new Date(`${s.createdAt.slice(0,10)}T12:00:00`), end=new Date(`${today()}T12:00:00`); let best=0, run=0; for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){const x=iso(d);if(!applicable(s,x))continue;if(done.has(x)){run++;best=Math.max(best,run)}else run=0} let current=0; for(let d=new Date(end);d>=start;d.setDate(d.getDate()-1)){const x=iso(d);if(!applicable(s,x))continue;if(done.has(x))current++;else break} return {current,best,total:s.completions.length}; }
+  const escape = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  function top(title,back=false){return `<header class="topbar">${back?'<button class="ghost" data-go="home">‹ Back</button>':'<span></span>'}<h1>${title}</h1><button class="ghost" data-go="settings" aria-label="Settings">⚙️</button></header>`}
+  function render(){ normalizeAll(); if(view.page==='detail') return renderDetail(); if(view.page==='form') return renderForm(); if(view.page==='settings') return renderSettings(); renderHome(); }
+  function renderHome(){ const list=data.streaks; app.innerHTML=`${top('My streaks')}<div class="stack">${list.length?list.map(s=>{let c=calc(s);return `<article class="card streak-card" data-open="${escape(s.id)}"><div class="row"><div class="row"><span class="icon">${escape(s.icon)}</span><div><div class="streak-title">${escape(s.name)}</div><small class="sub">🔥 ${c.current} day${c.current===1?'':'s'} current</small></div></div><button class="${s.completions.includes(today())?'':'primary'}" data-today="${escape(s.id)}">${s.completions.includes(today())?'Done ✓':'Mark done'}</button></div><div class="stats"><span>🏆 Best ${c.best}</span><span>✓ ${c.total} completed</span>${num(s.moneySaved)?`<span>💰 ${money(c.total*num(s.moneySaved))}</span>`:''}</div></article>`}).join(''):`<div class="card empty"><div class="icon">✨</div><h2>Start your first streak</h2><p>Track the things you want to keep doing.</p><br><button class="primary" data-new>+ Create a streak</button></div>`}</div>${list.length?'<button class="fab primary" data-new aria-label="Create streak">+</button>':''}`; }
+  function renderDetail(){ const s=streak(view.id); if(!s){view.page='home';return render()} const c=calc(s); app.innerHTML=`${top('Streak',true)}<div class="detail-head"><div class="hero"><span class="icon">${escape(s.icon)}</span><div><h2>${escape(s.name)}</h2><span class="sub">${frequencyText(s)}</span></div></div><div class="actions"><button class="primary" data-today="${escape(s.id)}">${s.completions.includes(today())?'✓ Done today':'Mark today done'}</button><button data-edit="${escape(s.id)}">Edit</button></div></div><section class="card"><div class="metrics"><div class="metric"><b>${c.current} 🔥</b><span>Current</span></div><div class="metric"><b>${c.best} 🏆</b><span>Best</span></div><div class="metric"><b>${c.total} ✓</b><span>Total</span></div></div>${num(s.moneySaved)?`<div class="reward">💰 ${money(c.total*num(s.moneySaved))} saved so far</div>`:''}${s.reward?`<div class="reward">🎁 Reward: ${escape(s.reward)}</div>`:''}</section>${calendar(s)}`; }
+  function calendar(s){ const m=view.month, y=m.getFullYear(), mo=m.getMonth(), first=new Date(y,mo,1).getDay(), days=new Date(y,mo+1,0).getDate(); let cells=''; for(let i=0;i<first;i++)cells+='<span class="day blank"></span>'; for(let n=1;n<=days;n++){let d=iso(new Date(y,mo,n)), past=d<=today(), state=!past?'future':d<s.createdAt.slice(0,10)||!applicable(s,d)?'untracked':s.completions.includes(d)?'complete':'missed';cells+=`<button class="day ${state} ${d===today()?'today':''}" ${past&&applicable(s,d)?`data-date="${d}" data-id="${escape(s.id)}"`:'disabled'} aria-label="${d}">${s.completions.includes(d)?'✓':n}</button>`} return `<section class="card calendar"><div class="month-nav"><button class="ghost" data-month="-1">‹</button><h3>${m.toLocaleString(undefined,{month:'long',year:'numeric'})}</h3><button class="ghost" data-month="1">›</button></div><div class="weekdays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<span>${x}</span>`).join('')}</div><div class="grid">${cells}</div><div class="key"><span><i class="dot" style="background:#dff6ed"></i>Completed</span><span><i class="dot" style="background:#ffe7e9"></i>Missed</span><span><i class="dot" style="background:#eeeef3"></i>Untracked / not applicable</span></div></section>`; }
+  function renderForm(){ const s=view.id?streak(view.id):{name:'',icon:'✨',frequency:'daily',customDays:[1,2,3,4,5,6,0],reward:'',moneySaved:''}; app.innerHTML=`${top(view.id?'Edit streak':'New streak',true)}<form class="form" id="streak-form"><label class="field">Name<input name="name" required maxlength="60" value="${escape(s.name)}" placeholder="e.g. Bring lunch"></label><label class="field">Icon<input name="icon" required maxlength="8" value="${escape(s.icon)}" placeholder="✨"></label><div class="field">Frequency<div class="frequency"><label><input type="radio" name="frequency" value="daily" ${s.frequency==='daily'?'checked':''}> Every day</label><label><input type="radio" name="frequency" value="weekdays" ${s.frequency==='weekdays'?'checked':''}> Weekdays</label><label><input type="radio" name="frequency" value="custom" ${s.frequency==='custom'?'checked':''}> Custom</label></div></div><div id="custom-picker" ${s.frequency==='custom'?'':'hidden'}><div class="field">Days to track<div class="custom-days">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((x,i)=>`<label><input type="checkbox" name="days" value="${i}" ${s.customDays.includes(i)?'checked':''}><span>${x}</span></label>`).join('')}</div></div></div><label class="field">Reward <small class="sub">Optional</small><input name="reward" maxlength="120" value="${escape(s.reward)}" placeholder="e.g. Coffee after 7 days"></label><label class="field">Money saved per completion <small class="sub">Optional</small><input name="money" type="number" min="0" step="0.01" value="${escape(s.moneySaved)}" placeholder="e.g. 8.50"></label><div class="actions"><button class="primary" type="submit">${view.id?'Save changes':'Create streak'}</button><button type="button" data-go="${view.id?'detail':'home'}">Cancel</button>${view.id?'<button class="danger" type="button" data-delete>Delete streak</button>':''}</div></form>`; }
+  function renderSettings(){app.innerHTML=`${top('Settings',true)}<section class="card"><h2>Your data</h2><p class="sub">Your streaks live only in this browser. Keep a backup before changing phones.</p><button class="settings-item" data-export><span>Export backup<small>Download all streak data as JSON</small></span><span>›</span></button><button class="settings-item" data-import><span>Import backup<small>Replace current data from a JSON backup</small></span><span>›</span></button><button class="settings-item" data-clear><span>Clear all data<small>Delete every streak from this device</small></span><span>›</span></button></section><p class="notice">Local-first and offline: no account, tracking, or server storage.</p>`}
+  const num=x=>{const n=Number(x);return Number.isFinite(n)&&n>0?n:0}; const money=n=>new Intl.NumberFormat(undefined,{style:'currency',currency:'EUR'}).format(n); const frequencyText=s=>s.frequency==='daily'?'Every day':s.frequency==='weekdays'?'Weekdays':'Custom days';
+  function toggle(id,date){ const s=streak(id); if(!s||!applicable(s,date)||date>today())return; const at=s.completions.indexOf(date); at<0?s.completions.push(date):s.completions.splice(at,1); save(); render(); }
+  function toast(t){const x=document.createElement('div');x.className='toast';x.textContent=t;document.body.append(x);setTimeout(()=>x.remove(),2200)}
+  document.addEventListener('click',e=>{const t=e.target.closest('button,[data-open]');if(!t)return;if(t.dataset.go){view.page=t.dataset.go;if(view.page==='detail'&&!view.id)view.page='home';render()}else if(t.dataset.new){view={page:'form',id:null,month:new Date()};render()}else if(t.dataset.open){view={page:'detail',id:t.dataset.open,month:new Date()};render()}else if(t.dataset.today)toggle(t.dataset.today,today());else if(t.dataset.date)toggle(t.dataset.id,t.dataset.date);else if(t.dataset.edit){view.page='form';view.id=t.dataset.edit;render()}else if(t.dataset.month){view.month=new Date(view.month.getFullYear(),view.month.getMonth()+Number(t.dataset.month),1);render()}else if(t.dataset.export)exportData();else if(t.dataset.import)$('#import-file').click();else if(t.dataset.clear)clearData();else if(t.dataset.delete)deleteStreak();});
+  document.addEventListener('change',e=>{if(e.target.name==='frequency')$('#custom-picker').hidden=e.target.value!=='custom'});
+  document.addEventListener('submit',e=>{if(e.target.id!=='streak-form')return;e.preventDefault();const f=new FormData(e.target), frequency=f.get('frequency'), days=[...e.target.querySelectorAll('[name=days]:checked')].map(x=>Number(x.value));if(frequency==='custom'&&!days.length)return toast('Choose at least one day.');let s=view.id?streak(view.id):null;if(!s){s={id:`${Date.now()}-${Math.random().toString(36).slice(2)}`,createdAt:today(),completions:[]};data.streaks.push(s)}s.name=f.get('name').trim();s.icon=f.get('icon').trim();s.frequency=frequency;s.customDays=days;s.reward=f.get('reward').trim();s.moneySaved=f.get('money').trim();save();view={page:'detail',id:s.id,month:new Date()};render();});
+  function deleteStreak(){const s=streak(view.id);if(s&&confirm(`Delete “${s.name}”? This cannot be undone unless you have exported a backup.`)){data.streaks=data.streaks.filter(x=>x!==s);save();view.page='home';render()}}
+  function exportData(){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`streaks-backup-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup downloaded.');}
+  $('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const incoming=parse(await file.text());if(!Array.isArray(getList(incoming)))throw Error();if(!confirm('Import this backup and replace the current streaks?'))return;establishRoot(incoming);normalizeAll();save();view.page='home';render();toast('Backup imported.')}catch{alert('That file is not a valid Streaks backup.')}finally{e.target.value=''}});
+  function clearData(){if(confirm('Delete all streaks and their completion history from this device? Export a backup first if you may want it later.')){data.streaks=[];save();view.page='home';render();toast('All local data cleared.')}}
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{})); boot();
+})();
