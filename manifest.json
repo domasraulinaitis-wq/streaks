@@ -1,1 +1,5 @@
-{"name":"Streaks","short_name":"Streaks","start_url":"./","display":"standalone","background_color":"#f5f4f0","theme_color":"#111111","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+  "name": "Streaks", "short_name": "Streaks", "description": "A private, local-first streak tracker.",
+  "start_url": "./", "display": "standalone", "background_color": "#f7f6ff", "theme_color": "#6d4aff",
+  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
